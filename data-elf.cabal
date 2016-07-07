@@ -1,0 +1,40 @@
+Name: data-elf
+Version: 0.1
+Category: Data
+Stability: experimental
+Synopsis: Executable and Linkable Format (ELF) data structures.
+Description:
+  This package provides Executable and Linkable Format (ELF) data structures.
+
+Homepage: https://github.com/mvv/data-elf
+Bug-Reports: https://github.com/mvv/data-elf/issues
+
+Author: Mikhail Vorozhtsov <mikhail.vorozhtsov@gmail.com>
+Maintainer: Mikhail Vorozhtsov <mikhail.vorozhtsov@gmail.com>
+Copyright: 2014-2016 Mikhail Vorozhtsov <mikhail.vorozhtsov@gmail.com>
+License: BSD3
+License-File: LICENSE
+
+Extra-Source-Files:
+  README.md
+
+Cabal-Version: >= 1.10.0
+Build-Type: Simple
+
+Source-Repository head
+  Type: git
+  Location: https://github.com/mvv/data-elf.git
+
+Library
+  Default-Language: Haskell2010
+  Build-Depends: base >= 4.7 && < 5
+               , bytestring >= 0.10.2
+               , binary >= 0.7
+               , data-endian >= 0.1
+               , data-sword >= 0.1.1
+               , data-flags >= 0.0.3
+               , text-latin1 >= 0.3
+  Hs-Source-Dirs: src
+  GHC-Options: -Wall
+  Exposed-Modules:
+    Data.Elf
