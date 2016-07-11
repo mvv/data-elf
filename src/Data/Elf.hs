@@ -370,7 +370,7 @@ lsbDataEnc = DataEnc 1
 
 -- | Big-endian data encoding (@ELFDATA2MSB@).
 msbDataEnc ∷ DataEnc
-msbDataEnc = DataEnc 1
+msbDataEnc = DataEnc 2
 
 -- | System ABI.
 newtype OsAbi = OsAbi { unOsAbi ∷ Word8 }
