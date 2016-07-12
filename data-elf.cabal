@@ -1,5 +1,5 @@
 Name: data-elf
-Version: 0.1
+Version: 0.1.0.1
 Category: Data
 Stability: experimental
 Synopsis: Executable and Linkable Format (ELF) data structures.
