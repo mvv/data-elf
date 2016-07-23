@@ -179,9 +179,17 @@ module Data.Elf
   , hiProcSymBind
   -- ** Symbol visibility
   , SymVisi(..)
-  , unSymVisi
+  , defSymVisi
+  , intSymVisi
+  , hiddenSymVisi
+  , protSymVisi
+  , exportSymVisi
+  , singSymVisi
+  , elimSymVisi
+  -- ** Symbol table index
   , SymIx(..)
   , undefSymIx
+  -- ** Symbol table entry
   , SymEnt(..)
   , SymEnt32
   , aSymEnt32
@@ -213,7 +221,7 @@ import Data.Ix (Ix)
 import Data.Bits (Bits, shiftL, shiftR, (.|.), FiniteBits)
 import Data.Flags (Flags(noFlags), BoundedFlags)
 import Data.Word (Word8, Word16, Word32, Word64)
-import Data.ShortWord (Word2, Word4, Word24)
+import Data.ShortWord (Word4, Word24)
 import Data.Monoid ((<>))
 import Data.Serializer (Serializable, SizedSerializable)
 import qualified Data.Serializer as S
@@ -1171,28 +1179,39 @@ hiProcSymBind ∷ SymBind
 hiProcSymBind = SymBind 15
 
 -- | Symbol visibility.
-data SymVisi = DefSymVisi    -- ^ Default (specified by the binding type)
-                             --   (@STV_DEFAULT@)
-             | IntSymVisi    -- ^ Internal (processor-specific hidden type)
-                             --   (@STV_INTERNAL@)
-             | HiddenSymVisi -- ^ Hidden (@STV_HIDDEN@)
-             | ProtSymVisi   -- ^ Protected (@STV_PROTECTED@)
-             deriving (Typeable, Data, Show, Read,
-                       Eq, Ord, Bounded, Enum, Ix)
+newtype SymVisi = SymVisi { unSymVisi ∷ Word4 }
+                  deriving (Typeable, Data, Show, Read,
+                            Eq, Ord, Bounded, Enum, Ix)
 
--- | Symbol visibility code.
-unSymVisi ∷ SymVisi → Word2
-unSymVisi DefSymVisi = 0
-unSymVisi IntSymVisi = 1
-unSymVisi HiddenSymVisi = 2
-unSymVisi ProtSymVisi = 3
+-- | Default symbol visibility (specified by the binding type;
+--   @STV_DEFAULT@).
+defSymVisi ∷ SymVisi
+defSymVisi = SymVisi 0
 
--- | Symbol visibility from code.
-toSymVisi ∷ Word2 → SymVisi
-toSymVisi 0 = DefSymVisi
-toSymVisi 1 = IntSymVisi
-toSymVisi 2 = HiddenSymVisi
-toSymVisi _ = ProtSymVisi
+-- | Internal symbol visibility (processor-specific hidden type;
+--   @STV_INTERNAL@).
+intSymVisi ∷ SymVisi
+intSymVisi = SymVisi 1
+
+-- | Hidden symbol (@STV_HIDDEN@).
+hiddenSymVisi ∷ SymVisi
+hiddenSymVisi = SymVisi 2
+
+-- | Protected symbol (@STV_PROTECTED@).
+protSymVisi ∷ SymVisi
+protSymVisi = SymVisi 3
+
+-- | Global symbol (@STV_EXPORTED@).
+exportSymVisi ∷ SymVisi
+exportSymVisi = SymVisi 4
+
+-- | Global singleton symbol (@STV_SINGLETON@).
+singSymVisi ∷ SymVisi
+singSymVisi = SymVisi 5
+
+-- | Extra hidden symbol (@STV_ELIMINATE@).
+elimSymVisi ∷ SymVisi
+elimSymVisi = SymVisi 6
 
 -- | Symbol table index.
 newtype SymIx c = SymIx { unSymIx ∷ UnSymIx c }
@@ -1260,7 +1279,7 @@ instance Deserializable SymEnt32 where
     info  ← D.word8 <?> "info"
     let bind = SymBind (fromIntegral $ shiftR info 4)
         tp   = SymType (fromIntegral info)
-    visi  ← toSymVisi . fromIntegral <$> D.word8 <?> "visibility"
+    visi  ← SymVisi . fromIntegral <$> D.word8 <?> "visibility"
     secIx ← SecIx <$> D.word16 <?> "section index"
     return $ SymEnt { symName  = name
                     , symAddr  = addr
@@ -1297,7 +1316,7 @@ instance Deserializable SymEnt64 where
     info  ← D.word8 <?> "info"
     let bind = SymBind (fromIntegral $ shiftR info 4)
         tp   = SymType (fromIntegral info)
-    visi  ← toSymVisi . fromIntegral <$> D.word8 <?> "visibility"
+    visi  ← SymVisi . fromIntegral <$> D.word8 <?> "visibility"
     secIx ← SecIx <$> D.word16 <?> "section index"
     addr  ← D.word64 <?> "address"
     size  ← D.word64 <?> "size"
@@ -1314,7 +1333,7 @@ zeroSymEnt ∷ IsFileClass c ⇒ SymEnt c
 zeroSymEnt = SymEnt { symName  = 0
                     , symBind  = localSymBind
                     , symType  = undefSymType
-                    , symVisi  = DefSymVisi
+                    , symVisi  = defSymVisi
                     , symSecIx = undefSecIx
                     , symAddr  = 0
                     , symSize  = 0 }
