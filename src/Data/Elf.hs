@@ -1,14 +1,19 @@
 {-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- | This module provides ELF data structures and (de)serialization routines.
 module Data.Elf
-  ( FileClass(..)
+  (
+  -- * File class
+    FileClass(..)
   , invalidFileClass
   , elf32FileClass
   , elf64FileClass
@@ -17,6 +22,8 @@ module Data.Elf
   , anElf32
   , Elf64(..)
   , anElf64
+  -- * File header
+  -- ** File type
   , FileType(..)
   , noneFileType
   , relFileType
@@ -27,18 +34,23 @@ module Data.Elf
   , hiOsFileType
   , loProcFileType
   , hiProcFileType
+  -- ** Machine code
   , Machine(..)
   , undefMachine
   , i386Machine
   , amd64Machine
+  -- ** Machine flags
   , MachFlags(..)
+  -- ** ELF version
   , Version(..)
   , invalidVersion
   , firstVersion
+  -- ** Data encoding
   , DataEnc(..)
   , invalidDataEnc
   , lsbDataEnc
   , msbDataEnc
+  -- ** Operating system ABI
   , OsAbi(..)
   , sysvOsAbi
   , hpuxOsAbi
@@ -58,18 +70,17 @@ module Data.Elf
   , embedOsAbi
   , AbiVer(..)
   , undefAbiVer
+  -- ** Identification
   , Ident(..)
-  , identSize
-  , buildIdent
+  , anIdent
+  -- ** File header
   , FileHdr(..)
   , FileHdr32
+  , aFileHdr32
   , FileHdr64
-  , fileHdr32Size
-  , fileHdr64Size
-  , putFileHdr32
-  , getFileHdr32
-  , buildFileHdr32
-  , buildFileHdr64
+  , aFileHdr64
+  -- * Program header
+  -- ** Segment type
   , SegType(..)
   , unusedSegType
   , loadSegType
@@ -82,22 +93,23 @@ module Data.Elf
   , hiOsSegType
   , loProcSegType
   , hiProcSegType
+  -- ** Segment flags
   , SegFlags(..)
   , execSegFlag
   , writeSegFlag
   , readSegFlag
   , osSegFlags
   , procSegFlags
+  -- ** Program header
   , ProgHdr(..)
   , ProgHdr32
+  , aProgHdr32
   , ProgHdr64
-  , progHdr32Size
-  , progHdr64Size
-  , putProgHdr32
-  , getProgHdr32
-  , buildProgHdr32
-  , buildProgHdr64
+  , aProgHdr64
+  -- * Section header
+  -- ** String table index
   , StrIx
+  -- ** Section header table index
   , SecIx(..)
   , undefSecIx
   , lastSecIx
@@ -108,6 +120,7 @@ module Data.Elf
   , absSecIx
   , commonSecIx
   , xIndexSecIx
+  -- ** Section type
   , SecType(..)
   , unusedSecType
   , progBitsSecType
@@ -125,6 +138,7 @@ module Data.Elf
   , hiOsSecType
   , loProcSecType
   , hiProcSecType
+  -- ** Section flags
   , SecFlags(..)
   , writeSecFlag
   , allocSecFlag
@@ -133,14 +147,15 @@ module Data.Elf
   , infoLinkSecFlag
   , osSecFlags
   , procSecFlags
+  -- ** Section header
   , SecHdr(..)
   , SecHdr32
+  , aSecHdr32
   , SecHdr64
-  , secHdr32Size
-  , secHdr64Size
-  , buildSecHdr32
-  , buildSecHdr64
+  , aSecHdr64
   , zeroSecHdr
+  -- * Symbol table
+  -- ** Symbol type
   , SymType(..)
   , undefSymType
   , objSymType
@@ -153,6 +168,7 @@ module Data.Elf
   , hiOsSymType
   , loProcSymType
   , hiProcSymType
+  -- ** Symbol binding
   , SymBind(..)
   , localSymBind
   , globalSymBind
@@ -161,51 +177,50 @@ module Data.Elf
   , hiOsSymBind
   , loProcSymBind
   , hiProcSymBind
+  -- ** Symbol visibility
   , SymVisi(..)
   , unSymVisi
   , SymIx(..)
   , undefSymIx
   , SymEnt(..)
   , SymEnt32
+  , aSymEnt32
   , SymEnt64
-  , symEnt32Size
-  , symEnt64Size
-  , buildSymEnt32
-  , buildSymEnt64
+  , aSymEnt64
   , zeroSymEnt
+  -- * Relocation table
+  -- ** Relocation type
   , RelType(..)
   , RelType32
   , RelType64
+  -- ** Relocation table entry
   , RelEnt(..)
   , RelEnt32
+  , aRelEnt32
   , RelEnt64
+  , aRelEnt64
   , RelaEnt(..)
   , RelaEnt32
+  , aRelaEnt32
   , RelaEnt64
-  , relaEnt32Size
-  , relaEnt64Size
-  , buildRelaEnt32
-  , buildRelaEnt64
+  , aRelaEnt64
   ) where
 
 import Data.Typeable (Typeable)
 import Data.Data (Data)
 import Data.Proxy (Proxy(..))
 import Data.Ix (Ix)
-import Data.Endian
-import Data.Bits (Bits, shiftL, (.|.), FiniteBits)
+import Data.Bits (Bits, shiftL, shiftR, (.|.), FiniteBits)
 import Data.Flags (Flags(noFlags), BoundedFlags)
 import Data.Word (Word8, Word16, Word32, Word64)
 import Data.ShortWord (Word2, Word4, Word24)
 import Data.Monoid ((<>))
-import qualified Data.ByteString.Builder as BB
-import Data.Binary (Binary)
-import qualified Data.Binary as Bin
-import qualified Data.Binary.Put as Bin
-import qualified Data.Binary.Get as Bin
-import Text.Ascii (ascii)
+import Data.Serializer (Serializable, SizedSerializable)
+import qualified Data.Serializer as S
+import Data.Deserializer (Deserializable, (<?>))
+import qualified Data.Deserializer as D
 import Control.Applicative ((<$>))
-import Control.Monad (unless)
+import Control.Monad (void, unless)
 
 -- | File class.
 newtype FileClass = FileClass { unFileClass ∷ Word8 }
@@ -456,70 +471,40 @@ data Ident = Ident { idClass   ∷ FileClass
                    , idDataEnc ∷ DataEnc
                    , idOsAbi   ∷ OsAbi
                    , idAbiVer  ∷ AbiVer }
-             deriving (Typeable, Data)
+             deriving (Typeable, Data, Show, Read, Eq)
 
--- | Identification serialized size.
-identSize ∷ Int
-identSize = 16
-{-# INLINE identSize #-}
+-- | 'Ident' proxy value.
+anIdent ∷ Proxy Ident
+anIdent = Proxy
 
-instance Binary Ident where
-  put (Ident {..}) = do
-    Bin.putWord8 0x7F
-    Bin.putWord8 (ascii 'E')
-    Bin.putWord8 (ascii 'L')
-    Bin.putWord8 (ascii 'F')
-    Bin.putWord8 (unFileClass idClass)
-    Bin.putWord8 (unDataEnc idDataEnc)
-    Bin.putWord8 (unVersion idVersion)
-    Bin.putWord8 (unOsAbi idOsAbi)
-    Bin.putWord8 (unAbiVer idAbiVer)
-    Bin.putWord8 0
-    Bin.putWord8 0
-    Bin.putWord8 0
-    Bin.putWord8 0
-    Bin.putWord8 0
-    Bin.putWord8 0
-    Bin.putWord8 0
+instance Serializable Ident where
+  put (Ident {..})
+    =  S.byteString "\127ELF"
+    <> S.word8 (unFileClass idClass)
+    <> S.word8 (unDataEnc idDataEnc)
+    <> S.word8 (unVersion idVersion)
+    <> S.word8 (unOsAbi idOsAbi)
+    <> S.word8 (unAbiVer idAbiVer)
+    <> S.byteString "\0\0\0\0\0\0\0"
+
+instance SizedSerializable Ident where
+  size _ = 16
+  {-# INLINE size #-}
+
+instance Deserializable Ident where
   get = do
-    b₀ ← Bin.getWord8
-    unless (b₀ == 0x7F) $ fail "Invalid ELF magic number"
-    b₁ ← Bin.getWord8
-    unless (b₁ == ascii 'E') $ fail "Invalid ELF magic number"
-    b₂ ← Bin.getWord8
-    unless (b₂ == ascii 'L') $ fail "Invalid ELF magic number"
-    b₃ ← Bin.getWord8
-    unless (b₃ == ascii 'F') $ fail "Invalid ELF magic number"
-    fileCls ← FileClass <$> Bin.getWord8
-    dataEnc ← DataEnc <$> Bin.getWord8
-    version ← Version <$> Bin.getWord8
-    osAbi   ← OsAbi <$> Bin.getWord8
-    abiVer  ← AbiVer <$> Bin.getWord8
-    Bin.skip 7
+    void $ D.bytes "\127ELF" <?> "ELF magic number"
+    fileCls ← FileClass <$> D.word8 <?> "file class"
+    dataEnc ← DataEnc <$> D.word8 <?> "data encoding"
+    version ← Version <$> D.word8 <?> "file version"
+    osAbi   ← OsAbi <$> D.word8 <?> "OS ABI code"
+    abiVer  ← AbiVer <$> D.word8 <?> "OS ABI version"
+    D.skip 7
     return $ Ident { idClass   = fileCls
                    , idDataEnc = dataEnc
                    , idVersion = version
                    , idOsAbi   = osAbi
                    , idAbiVer  = abiVer }
-
--- | Serialize identification via 'ByteString' builder.
-buildIdent ∷ Ident → BB.Builder
-buildIdent (Ident {..}) =  BB.word8 0x7F
-                        <> BB.word8 (ascii 'E')
-                        <> BB.word8 (ascii 'L')
-                        <> BB.word8 (ascii 'F')
-                        <> BB.word8 (unFileClass idClass)
-                        <> BB.word8 (unDataEnc idDataEnc)
-                        <> BB.word8 (unVersion idVersion)
-                        <> BB.word8 (unOsAbi idOsAbi)
-                        <> BB.word8 (unAbiVer idAbiVer)
-                        <> BB.word8 0
-                        <> BB.word8 0
-                        <> BB.word8 0
-                        <> BB.word8 0
-                        <> BB.word8 0
-                        <> BB.word8 0
-                        <> BB.word8 0
 
 -- | File header.
 data FileHdr c = FileHdr { fhType    ∷ FileType
@@ -534,65 +519,60 @@ data FileHdr c = FileHdr { fhType    ∷ FileType
                  deriving Typeable
 
 deriving instance (Data c, IsFileClass c) ⇒ Data (FileHdr c)
+deriving instance IsFileClass c ⇒ Show (FileHdr c)
+deriving instance IsFileClass c ⇒ Read (FileHdr c)
+deriving instance IsFileClass c ⇒ Eq (FileHdr c)
 
 -- | ELF32 file header.
 type FileHdr32 = FileHdr Elf32
 
--- | ELF64 file header.
-type FileHdr64 = FileHdr Elf64
+-- | 'FileHdr32' proxy value.
+aFileHdr32 ∷ Proxy FileHdr32
+aFileHdr32 = Proxy
 
--- | ELF32 file header size.
-fileHdr32Size ∷ Int
-fileHdr32Size = 36
+instance Serializable FileHdr32 where
+  put (FileHdr {..}) 
+    =  S.word16 (unFileType fhType)
+    <> S.word16 (unMachine fhMachine)
+    <> S.word32 1
+    <> S.word32 fhEntry
+    <> S.word32 fhPhOff
+    <> S.word32 fhShOff
+    <> S.word32 (unMachFlags fhFlags)
+    <> S.word16 (fromIntegral $ S.size anIdent + S.size aFileHdr32)
+    <> S.word16 (fromIntegral $ S.size aProgHdr32)
+    <> S.word16 fhPhNum
+    <> S.word16 (fromIntegral $ S.size aSecHdr32)
+    <> S.word16 fhShNum
+    <> S.word16 (unSecIx fhSnStIx)
 
--- | ELF64 file header size.
-fileHdr64Size ∷ Int
-fileHdr64Size = 56
+instance SizedSerializable FileHdr32 where
+  size _ = 36
+  {-# INLINE size #-}
 
--- | Serialize ELF32 file header via 'Bin.PutM' monad.
-putFileHdr32 ∷ Endian → FileHdr32 → Bin.Put
-putFileHdr32 endian (FileHdr {..}) = do
-    word16 (unFileType fhType)
-    word16 (unMachine fhMachine)
-    word32 1
-    word32 fhEntry
-    word32 fhPhOff
-    word32 fhShOff
-    word32 (unMachFlags fhFlags)
-    word16 (fromIntegral $ identSize + fileHdr32Size)
-    word16 (fromIntegral progHdr32Size)
-    word16 fhPhNum
-    word16 (fromIntegral secHdr32Size)
-    word16 fhShNum
-    word16 (unSecIx fhSnStIx)
-  where word16 | isLittleEndian endian = Bin.putWord16le
-               | otherwise             = Bin.putWord16be
-        word32 | isLittleEndian endian = Bin.putWord32le
-               | otherwise             = Bin.putWord32be
-
--- | Deserialize ELF32 file header via 'Bin.Get' monad.
-getFileHdr32 ∷ Endian → Bin.Get FileHdr32
-getFileHdr32 endian = do
-    fileType ← FileType <$> word16
-    machine ← Machine <$> word16
-    version ← word32
-    unless (version == 1) $ fail "Unexpected ELF version"
-    entry ← word32
-    phOff ← word32
-    shOff ← word32
-    flags ← MachFlags <$> word32
-    fileHdrSize ← word16
-    unless (fileHdrSize == fromIntegral (identSize + fileHdr32Size)) $
-      fail "Unexpected ELF file header size"
-    progHdrSize ← word16
-    unless (progHdrSize == fromIntegral progHdr32Size) $
-      fail "Unexpected ELF program header size"
-    phNum ← word16
-    secHdrSize ← word16
-    unless (secHdrSize == fromIntegral secHdr32Size) $
-      fail "Unexpected ELF section header size"
-    shNum  ← word16
-    snStIx ← SecIx <$> word16
+instance Deserializable FileHdr32 where
+  get = do
+    fileType ← FileType <$> D.word16 <?> "file type"
+    machine ← Machine <$> D.word16 <?> "machine"
+    version ← D.word32 <?> "version"
+    unless (version == 1) $ D.unexpected "Unexpected ELF version"
+    entry ← D.word32 <?> "entry point address"
+    phOff ← D.word32 <?> "program header table offset"
+    shOff ← D.word32 <?> "section header table offset"
+    flags ← MachFlags <$> D.word32 <?> "machine flags"
+    fileHdrSize ← D.word16 <?> "file header size"
+    unless (fileHdrSize ==
+              fromIntegral (S.size anIdent + S.size aFileHdr32)) $
+      D.unexpected "Unexpected ELF file header size"
+    progHdrSize ← D.word16 <?> "program header size"
+    unless (progHdrSize == fromIntegral (S.size aProgHdr32)) $
+      D.unexpected "Unexpected ELF program header size"
+    phNum ← D.word16 <?> "program header table size"
+    secHdrSize ← D.word16 <?> "section header size"
+    unless (secHdrSize == fromIntegral (S.size aSecHdr32)) $
+      D.unexpected "Unexpected ELF section header size"
+    shNum  ← D.word16 <?> "section header table size"
+    snStIx ← SecIx <$> D.word16 <?> "section name string table section index"
     return $ FileHdr { fhType    = fileType
                      , fhMachine = machine
                      , fhEntry   = entry
@@ -602,49 +582,66 @@ getFileHdr32 endian = do
                      , fhPhNum   = phNum
                      , fhShNum   = shNum
                      , fhSnStIx  = snStIx }
-  where word16 | isLittleEndian endian = Bin.getWord16le
-               | otherwise             = Bin.getWord16be
-        word32 | isLittleEndian endian = Bin.getWord32le
-               | otherwise             = Bin.getWord32be
 
--- | Serialize ELF32 file header via 'ByteString' builder.
-buildFileHdr32 ∷ Endian → FileHdr32 → BB.Builder
-buildFileHdr32 endian (FileHdr {..})
-  =  word16 (unFileType fhType)
-  <> word16 (unMachine fhMachine)
-  <> word32 1
-  <> word32 fhEntry
-  <> word32 fhPhOff
-  <> word32 fhShOff
-  <> word32 (unMachFlags fhFlags)
-  <> word16 (fromIntegral $ identSize + fileHdr32Size)
-  <> word16 (fromIntegral progHdr32Size)
-  <> word16 fhPhNum
-  <> word16 (fromIntegral secHdr32Size)
-  <> word16 fhShNum
-  <> word16 (unSecIx fhSnStIx)
-  where word16 = if isLittleEndian endian then BB.word16LE else BB.word16BE
-        word32 = if isLittleEndian endian then BB.word32LE else BB.word32BE
+-- | ELF64 file header.
+type FileHdr64 = FileHdr Elf64
 
--- | Serialize ELF64 file header via 'ByteString' builder.
-buildFileHdr64 ∷ Endian → FileHdr64 → BB.Builder
-buildFileHdr64 endian (FileHdr {..})
-  =  word16 (unFileType fhType)
-  <> word16 (unMachine fhMachine)
-  <> word32 1
-  <> word64 fhEntry
-  <> word64 fhPhOff
-  <> word64 fhShOff
-  <> word32 (unMachFlags fhFlags)
-  <> word16 (fromIntegral $ identSize + fileHdr64Size)
-  <> word16 (fromIntegral progHdr64Size)
-  <> word16 fhPhNum
-  <> word16 (fromIntegral secHdr64Size)
-  <> word16 fhShNum
-  <> word16 (unSecIx fhSnStIx)
-  where word16 = if isLittleEndian endian then BB.word16LE else BB.word16BE
-        word32 = if isLittleEndian endian then BB.word32LE else BB.word32BE
-        word64 = if isLittleEndian endian then BB.word64LE else BB.word64BE
+-- | 'FileHdr64' proxy value.
+aFileHdr64 ∷ Proxy FileHdr64
+aFileHdr64 = Proxy
+
+instance Serializable FileHdr64 where
+  put (FileHdr {..})
+    =  S.word16 (unFileType fhType)
+    <> S.word16 (unMachine fhMachine)
+    <> S.word32 1
+    <> S.word64 fhEntry
+    <> S.word64 fhPhOff
+    <> S.word64 fhShOff
+    <> S.word32 (unMachFlags fhFlags)
+    <> S.word16 (fromIntegral $ S.size anIdent + S.size aFileHdr64)
+    <> S.word16 (fromIntegral $ S.size aProgHdr64)
+    <> S.word16 fhPhNum
+    <> S.word16 (fromIntegral $ S.size aSecHdr64)
+    <> S.word16 fhShNum
+    <> S.word16 (unSecIx fhSnStIx)
+
+instance SizedSerializable FileHdr64 where
+  size _ = 56
+  {-# INLINE size #-}
+
+instance Deserializable FileHdr64 where
+  get = do
+    fileType ← FileType <$> D.word16 <?> "file type"
+    machine ← Machine <$> D.word16 <?> "machine code"
+    version ← D.word32 <?> "version"
+    unless (version == 1) $ D.unexpected "Unexpected ELF version"
+    entry ← D.word64 <?> "entry point address"
+    phOff ← D.word64 <?> "program header table offset"
+    shOff ← D.word64 <?> "section header table offset"
+    flags ← MachFlags <$> D.word32 <?> "machine flags"
+    fileHdrSize ← D.word16 <?> "file header size"
+    unless (fileHdrSize ==
+              fromIntegral (S.size anIdent + S.size aFileHdr64)) $
+      D.unexpected "Unexpected ELF file header size"
+    progHdrSize ← D.word16 <?> "program header size"
+    unless (progHdrSize == fromIntegral (S.size aProgHdr64)) $
+      D.unexpected "Unexpected ELF program header size"
+    phNum ← D.word16 <?> "program header table size"
+    secHdrSize ← D.word16 <?> "section header size"
+    unless (secHdrSize == fromIntegral (S.size aSecHdr64)) $
+      D.unexpected "Unexpected ELF section header size"
+    shNum  ← D.word16 <?> "section header table size"
+    snStIx ← SecIx <$> D.word16 <?> "section name string table section index"
+    return $ FileHdr { fhType    = fileType
+                     , fhMachine = machine
+                     , fhEntry   = entry
+                     , fhPhOff   = phOff
+                     , fhShOff   = shOff
+                     , fhFlags   = flags
+                     , fhPhNum   = phNum
+                     , fhShNum   = shNum
+                     , fhSnStIx  = snStIx }
 
 -- | Segment type.
 newtype SegType = SegType { unSegType ∷ Word32 }
@@ -732,46 +729,42 @@ data ProgHdr c = ProgHdr { phType     ∷ SegType
                  deriving Typeable
 
 deriving instance (Data c, IsFileClass c) ⇒ Data (ProgHdr c)
+deriving instance IsFileClass c ⇒ Show (ProgHdr c)
+deriving instance IsFileClass c ⇒ Read (ProgHdr c)
+deriving instance IsFileClass c ⇒ Eq (ProgHdr c)
 
 -- | ELF32 program header table entry.
 type ProgHdr32 = ProgHdr Elf32
 
--- | ELF64 program header table entry.
-type ProgHdr64 = ProgHdr Elf64
+-- | 'ProgHdr32' proxy value.
+aProgHdr32 ∷ Proxy ProgHdr32
+aProgHdr32 = Proxy
 
--- | ELF32 program header table entry size.
-progHdr32Size ∷ Int
-progHdr32Size = 32
+instance Serializable ProgHdr32 where
+  put (ProgHdr {..})
+    =  S.word32 (unSegType phType)
+    <> S.word32 phOff
+    <> S.word32 phVirtAddr
+    <> S.word32 phPhysAddr
+    <> S.word32 phFileSize
+    <> S.word32 phMemSize
+    <> S.word32 (unSegFlags phFlags)
+    <> S.word32 phAlign
 
--- | ELF64 program header table entry size.
-progHdr64Size ∷ Int
-progHdr64Size = 56
+instance SizedSerializable ProgHdr32 where
+  size _ = 32
+  {-# INLINE size #-}
 
--- | Serialize ELF32 program header via 'Bin.PutM' monad.
-putProgHdr32 ∷ Endian → ProgHdr32 → Bin.Put
-putProgHdr32 endian (ProgHdr {..}) = do
-    word32 (unSegType phType)
-    word32 phOff
-    word32 phVirtAddr
-    word32 phPhysAddr
-    word32 phFileSize
-    word32 phMemSize
-    word32 (unSegFlags phFlags)
-    word32 phAlign
-  where word32 | isLittleEndian endian = Bin.putWord32le
-               | otherwise             = Bin.putWord32be
-
--- | Deserialize ELF32 program header via 'Bin.Get' monad.
-getProgHdr32 ∷ Endian → Bin.Get ProgHdr32
-getProgHdr32 endian = do
-    segType ← SegType <$> word32
-    off ← word32
-    virtAddr ← word32
-    physAddr ← word32
-    fileSize ← word32
-    memSize ← word32
-    flags ← SegFlags <$> word32
-    align ← word32
+instance Deserializable ProgHdr32 where
+  get = do
+    segType  ← SegType <$> D.word32 <?> "type"
+    off      ← D.word32 <?> "offset"
+    virtAddr ← D.word32 <?> "virtual address"
+    physAddr ← D.word32 <?> "physical address"
+    fileSize ← D.word32 <?> "in-file size"
+    memSize  ← D.word32 <?> "in-memory size"
+    flags    ← SegFlags <$> D.word32 <?> "flags"
+    align    ← D.word32 <?> "alignment"
     return $ ProgHdr { phType = segType
                      , phOff  = off
                      , phVirtAddr = virtAddr
@@ -780,35 +773,47 @@ getProgHdr32 endian = do
                      , phMemSize = memSize
                      , phFlags = flags
                      , phAlign = align }
-  where word32 | isLittleEndian endian = Bin.getWord32le
-               | otherwise             = Bin.getWord32be
 
--- | Serialize ELF32 program header via 'ByteString' builder.
-buildProgHdr32 ∷ Endian → ProgHdr32 → BB.Builder
-buildProgHdr32 endian (ProgHdr {..})
-  =  word32 (unSegType phType)
-  <> word32 phOff
-  <> word32 phVirtAddr
-  <> word32 phPhysAddr
-  <> word32 phFileSize
-  <> word32 phMemSize
-  <> word32 (unSegFlags phFlags)
-  <> word32 phAlign
-  where word32 = if isLittleEndian endian then BB.word32LE else BB.word32BE
+-- | ELF64 program header table entry.
+type ProgHdr64 = ProgHdr Elf64
 
--- | Serialize ELF64 program header via 'ByteString' builder.
-buildProgHdr64 ∷ Endian → ProgHdr64 → BB.Builder
-buildProgHdr64 endian (ProgHdr {..})
-  =  word32 (unSegType phType)
-  <> word32 (unSegFlags phFlags)
-  <> word64 phOff
-  <> word64 phVirtAddr
-  <> word64 phPhysAddr
-  <> word64 phFileSize
-  <> word64 phMemSize
-  <> word64 phAlign
-  where word32 = if isLittleEndian endian then BB.word32LE else BB.word32BE
-        word64 = if isLittleEndian endian then BB.word64LE else BB.word64BE
+-- | 'ProgHdr64' proxy value.
+aProgHdr64 ∷ Proxy ProgHdr64
+aProgHdr64 = Proxy
+
+instance Serializable ProgHdr64 where
+  put (ProgHdr {..})
+    =  S.word32 (unSegType phType)
+    <> S.word32 (unSegFlags phFlags)
+    <> S.word64 phOff
+    <> S.word64 phVirtAddr
+    <> S.word64 phPhysAddr
+    <> S.word64 phFileSize
+    <> S.word64 phMemSize
+    <> S.word64 phAlign
+
+instance SizedSerializable ProgHdr64 where
+  size _ = 56
+  {-# INLINE size #-}
+
+instance Deserializable ProgHdr64 where
+  get = do
+    segType  ← SegType <$> D.word32 <?> "type"
+    flags    ← SegFlags <$> D.word32 <?> "flags"
+    off      ← D.word64 <?> "offset"
+    virtAddr ← D.word64 <?> "virtual address"
+    physAddr ← D.word64 <?> "physical address"
+    fileSize ← D.word64 <?> "in-file size"
+    memSize  ← D.word64 <?> "in-memory size"
+    align    ← D.word64 <?> "alignment"
+    return $ ProgHdr { phType = segType
+                     , phOff  = off
+                     , phVirtAddr = virtAddr
+                     , phPhysAddr = physAddr
+                     , phFileSize = fileSize
+                     , phMemSize = memSize
+                     , phFlags = flags
+                     , phAlign = align }
 
 -- | String table index.
 type StrIx = Word32
@@ -972,51 +977,103 @@ data SecHdr c = SecHdr { shName    ∷ StrIx
                 deriving Typeable
 
 deriving instance (Data c, IsFileClass c) ⇒ Data (SecHdr c)
+deriving instance IsFileClass c ⇒ Show (SecHdr c)
+deriving instance IsFileClass c ⇒ Read (SecHdr c)
+deriving instance IsFileClass c ⇒ Eq (SecHdr c)
 
 -- | ELF32 section header table entry.
 type SecHdr32 = SecHdr Elf32
 
+-- | 'SecHdr32' proxy value.
+aSecHdr32 ∷ Proxy SecHdr32
+aSecHdr32 = Proxy
+
+instance Serializable SecHdr32 where
+  put (SecHdr {..})
+    =  S.word32 shName
+    <> S.word32 (unSecType shType)
+    <> S.word32 (unSecFlags shFlags)
+    <> S.word32 shAddr
+    <> S.word32 shOff
+    <> S.word32 shSize
+    <> S.word32 shLink
+    <> S.word32 shInfo
+    <> S.word32 shAlign
+    <> S.word32 shEntSize
+
+instance SizedSerializable SecHdr32 where
+  size _ = 40
+  {-# INLINE size #-}
+
+instance Deserializable SecHdr32 where
+  get = do
+    name    ← D.word32 <?> "name"
+    tp      ← SecType <$> D.word32 <?> "type"
+    flags   ← SecFlags <$> D.word32 <?> "flags"
+    addr    ← D.word32 <?> "address"
+    off     ← D.word32 <?> "offset"
+    size    ← D.word32 <?> "size"
+    link    ← D.word32 <?> "link"
+    info    ← D.word32 <?> "extra information"
+    align   ← D.word32 <?> "alignment"
+    entSize ← D.word32 <?> "entry size"
+    return $ SecHdr { shName    = name
+                    , shType    = tp
+                    , shFlags   = flags
+                    , shAddr    = addr
+                    , shOff     = off
+                    , shSize    = size
+                    , shLink    = link
+                    , shInfo    = info
+                    , shAlign   = align
+                    , shEntSize = entSize }
+
 -- | ELF64 section header table entry.
 type SecHdr64 = SecHdr Elf64
 
--- | ELF32 section header table entry size.
-secHdr32Size ∷ Int
-secHdr32Size = 40
+-- | 'SecHdr64' proxy value.
+aSecHdr64 ∷ Proxy SecHdr64
+aSecHdr64 = Proxy
 
--- | ELF64 section header table entry size.
-secHdr64Size ∷ Int
-secHdr64Size = 64
+instance Serializable SecHdr64 where
+  put (SecHdr {..})
+    =  S.word32 shName
+    <> S.word32 (unSecType shType)
+    <> S.word64 (fromIntegral (unSecFlags shFlags))
+    <> S.word64 shAddr
+    <> S.word64 shOff
+    <> S.word64 shSize
+    <> S.word32 shLink
+    <> S.word32 shInfo
+    <> S.word64 shAlign
+    <> S.word64 shEntSize
 
--- | Serialize ELF32 section header via 'ByteString' builder.
-buildSecHdr32 ∷ Endian → SecHdr32 → BB.Builder
-buildSecHdr32 endian (SecHdr {..})
-  =  word32 shName
-  <> word32 (unSecType shType)
-  <> word32 (unSecFlags shFlags)
-  <> word32 shAddr
-  <> word32 shOff
-  <> word32 shSize
-  <> word32 shLink
-  <> word32 shInfo
-  <> word32 shAlign
-  <> word32 shEntSize
-  where word32 = if isLittleEndian endian then BB.word32LE else BB.word32BE
+instance SizedSerializable SecHdr64 where
+  size _ = 64
+  {-# INLINE size #-}
 
--- | Serialize ELF64 section header via 'ByteString' builder.
-buildSecHdr64 ∷ Endian → SecHdr64 → BB.Builder
-buildSecHdr64 endian (SecHdr {..})
-  =  word32 shName
-  <> word32 (unSecType shType)
-  <> word64 (fromIntegral (unSecFlags shFlags))
-  <> word64 shAddr
-  <> word64 shOff
-  <> word64 shSize
-  <> word32 shLink
-  <> word32 shInfo
-  <> word64 shAlign
-  <> word64 shEntSize
-  where word32 = if isLittleEndian endian then BB.word32LE else BB.word32BE
-        word64 = if isLittleEndian endian then BB.word64LE else BB.word64BE
+instance Deserializable SecHdr64 where
+  get = do
+    name    ← D.word32 <?> "name"
+    tp      ← SecType <$> D.word32 <?> "type"
+    flags   ← SecFlags . fromIntegral <$> D.word64 <?> "flags"
+    addr    ← D.word64 <?> "address"
+    off     ← D.word64 <?> "offset"
+    size    ← D.word64 <?> "size"
+    link    ← D.word32 <?> "link"
+    info    ← D.word32 <?> "extra information"
+    align   ← D.word64 <?> "alignment"
+    entSize ← D.word64 <?> "entry size"
+    return $ SecHdr { shName    = name
+                    , shType    = tp
+                    , shFlags   = flags
+                    , shAddr    = addr
+                    , shOff     = off
+                    , shSize    = size
+                    , shLink    = link
+                    , shInfo    = info
+                    , shAlign   = align
+                    , shEntSize = entSize }
 
 -- | Section header filled with zeros.
 zeroSecHdr ∷ IsFileClass c ⇒ SecHdr c
@@ -1130,6 +1187,13 @@ unSymVisi IntSymVisi = 1
 unSymVisi HiddenSymVisi = 2
 unSymVisi ProtSymVisi = 3
 
+-- | Symbol visibility from code.
+toSymVisi ∷ Word2 → SymVisi
+toSymVisi 0 = DefSymVisi
+toSymVisi 1 = IntSymVisi
+toSymVisi 2 = HiddenSymVisi
+toSymVisi _ = ProtSymVisi
+
 -- | Symbol table index.
 newtype SymIx c = SymIx { unSymIx ∷ UnSymIx c }
                   deriving Typeable
@@ -1163,47 +1227,87 @@ data SymEnt c = SymEnt { symName  ∷ StrIx
                 deriving Typeable
 
 deriving instance (Data c, IsFileClass c) ⇒ Data (SymEnt c)
+deriving instance IsFileClass c ⇒ Show (SymEnt c)
+deriving instance IsFileClass c ⇒ Read (SymEnt c)
+deriving instance IsFileClass c ⇒ Eq (SymEnt c)
 
 -- | ELF32 symbol table entry.
 type SymEnt32 = SymEnt Elf32
 
+-- | 'SymEnt32' proxy value.
+aSymEnt32 ∷ Proxy SymEnt32
+aSymEnt32 = Proxy
+
+instance Serializable SymEnt32 where
+  put (SymEnt {..})
+    =  S.word32 symName
+    <> S.word32 symAddr
+    <> S.word32 symSize
+    <> S.word8 (shiftL (fromIntegral $ unSymBind symBind) 4 .|.
+                fromIntegral (unSymType symType))
+    <> S.word8 (fromIntegral (unSymVisi symVisi))
+    <> S.word16 (unSecIx symSecIx)
+
+instance SizedSerializable SymEnt32 where
+  size _ = 16
+  {-# INLINE size #-}
+
+instance Deserializable SymEnt32 where
+  get = do
+    name  ← D.word32 <?> "name"
+    addr  ← D.word32 <?> "address"
+    size  ← D.word32 <?> "size"
+    info  ← D.word8 <?> "info"
+    let bind = SymBind (fromIntegral $ shiftR info 4)
+        tp   = SymType (fromIntegral info)
+    visi  ← toSymVisi . fromIntegral <$> D.word8 <?> "visibility"
+    secIx ← SecIx <$> D.word16 <?> "section index"
+    return $ SymEnt { symName  = name
+                    , symAddr  = addr
+                    , symSize  = size
+                    , symBind  = bind
+                    , symType  = tp
+                    , symVisi  = visi
+                    , symSecIx = secIx }
+
 -- | ELF64 symbol table entry.
 type SymEnt64 = SymEnt Elf64
 
--- | ELF32 symbol table entry size.
-symEnt32Size ∷ Int
-symEnt32Size = 16
+-- | 'SymEnt64' proxy value.
+aSymEnt64 ∷ Proxy SymEnt64
+aSymEnt64 = Proxy
 
--- | ELF64 symbol table entry size.
-symEnt64Size ∷ Int
-symEnt64Size = 24
+instance Serializable SymEnt64 where
+  put (SymEnt {..})
+    =  S.word32 symName
+    <> S.word8 (shiftL (fromIntegral $ unSymBind symBind) 4 .|.
+                fromIntegral (unSymType symType))
+    <> S.word8 (fromIntegral (unSymVisi symVisi))
+    <> S.word16 (unSecIx symSecIx)
+    <> S.word64 symAddr
+    <> S.word64 symSize
 
--- | Serialize ELF32 symbol table entry via 'ByteString' builder.
-buildSymEnt32 ∷ Endian → SymEnt32 → BB.Builder
-buildSymEnt32 endian (SymEnt {..})
-  =  word32 symName
-  <> word32 symAddr
-  <> word32 symSize
-  <> BB.word8 (shiftL (fromIntegral $ unSymBind symBind) 4 .|.
-               fromIntegral (unSymType symType))
-  <> BB.word8 (fromIntegral (unSymVisi symVisi))
-  <> word16 (unSecIx symSecIx)
-  where word16 = if isLittleEndian endian then BB.word16LE else BB.word16BE
-        word32 = if isLittleEndian endian then BB.word32LE else BB.word32BE
+instance SizedSerializable SymEnt64 where
+  size _ = 24
+  {-# INLINE size #-}
 
--- | Serialize ELF64 symbol table entry via 'ByteString' builder.
-buildSymEnt64 ∷ Endian → SymEnt64 → BB.Builder
-buildSymEnt64 endian (SymEnt {..})
-  =  word32 symName
-  <> BB.word8 (shiftL (fromIntegral $ unSymBind symBind) 4 .|.
-               fromIntegral (unSymType symType))
-  <> BB.word8 (fromIntegral $ unSymVisi symVisi)
-  <> word16 (unSecIx symSecIx)
-  <> word64 symAddr
-  <> word64 symSize
-  where word16 = if isLittleEndian endian then BB.word16LE else BB.word16BE
-        word32 = if isLittleEndian endian then BB.word32LE else BB.word32BE
-        word64 = if isLittleEndian endian then BB.word64LE else BB.word64BE
+instance Deserializable SymEnt64 where
+  get = do
+    name  ← D.word32 <?> "name"
+    info  ← D.word8 <?> "info"
+    let bind = SymBind (fromIntegral $ shiftR info 4)
+        tp   = SymType (fromIntegral info)
+    visi  ← toSymVisi . fromIntegral <$> D.word8 <?> "visibility"
+    secIx ← SecIx <$> D.word16 <?> "section index"
+    addr  ← D.word64 <?> "address"
+    size  ← D.word64 <?> "size"
+    return $ SymEnt { symName  = name
+                    , symAddr  = addr
+                    , symSize  = size
+                    , symBind  = bind
+                    , symType  = tp
+                    , symVisi  = visi
+                    , symSecIx = secIx }
 
 -- | Symbol table entry filled with zeros.
 zeroSymEnt ∷ IsFileClass c ⇒ SymEnt c
@@ -1248,8 +1352,56 @@ deriving instance IsFileClass c ⇒ Eq (RelEnt c)
 -- | ELF32 relocation table entry (REL).
 type RelEnt32 = RelEnt Elf32
 
+-- | 'RelEnt32' proxy value.
+aRelEnt32 ∷ Proxy RelEnt32
+aRelEnt32 = Proxy
+
+instance Serializable RelEnt32 where
+  put (RelEnt {..})
+    =  S.word32 relOff
+    <> S.word32 (shiftL (fromIntegral relSymIx) 8 .|.
+                 fromIntegral (unRelType relType))
+
+instance SizedSerializable RelEnt32 where
+  size _ = 8
+  {-# INLINE size #-}
+
+instance Deserializable RelEnt32 where
+  get = do
+    off  ← D.word32 <?> "offset"
+    info ← D.word32 <?> "info"
+    let symIx = SymIx $ fromIntegral $ shiftR info 8
+        tp    = RelType $ fromIntegral info
+    return $ RelEnt { relOff   = off
+                    , relSymIx = symIx
+                    , relType  = tp }
+
 -- | ELF64 relocation table entry (REL).
 type RelEnt64 = RelEnt Elf64
+
+-- | 'RelEnt64' proxy value.
+aRelEnt64 ∷ Proxy RelEnt64
+aRelEnt64 = Proxy
+
+instance Serializable RelEnt64 where
+  put (RelEnt {..})
+    =  S.word64 relOff
+    <> S.word64 (shiftL (fromIntegral relSymIx) 32 .|.
+                 fromIntegral (unRelType relType))
+
+instance SizedSerializable RelEnt64 where
+  size _ = 16
+  {-# INLINE size #-}
+
+instance Deserializable RelEnt64 where
+  get = do
+    off  ← D.word64 <?> "offset"
+    info ← D.word64 <?> "info"
+    let symIx = SymIx $ fromIntegral $ shiftR info 32
+        tp    = RelType $ fromIntegral info
+    return $ RelEnt { relOff   = off
+                    , relSymIx = symIx
+                    , relType  = tp }
 
 -- | Relocation table entry (RELA).
 data RelaEnt c = RelaEnt { relaOff    ∷ Addr c
@@ -1258,41 +1410,67 @@ data RelaEnt c = RelaEnt { relaOff    ∷ Addr c
                          , relaAddend ∷ Addr c }
                  deriving Typeable
 
--- | ELF32 relocation table entry (RELA).
-type RelaEnt32 = RelaEnt Elf32
-
--- | ELF64 relocation table entry (RELA).
-type RelaEnt64 = RelaEnt Elf64
-
 deriving instance (Data c, IsFileClass c) ⇒ Data (RelaEnt c)
 deriving instance IsFileClass c ⇒ Show (RelaEnt c)
 deriving instance IsFileClass c ⇒ Read (RelaEnt c)
 deriving instance IsFileClass c ⇒ Eq (RelaEnt c)
 
--- | ELF32 relocation table entry (RELA) size.
-relaEnt32Size ∷ Int
-relaEnt32Size = 12
+-- | ELF32 relocation table entry (RELA).
+type RelaEnt32 = RelaEnt Elf32
 
--- | ELF64 relocation table entry (RELA) size.
-relaEnt64Size ∷ Int
-relaEnt64Size = 24
+-- | 'RelaEnt32' proxy value.
+aRelaEnt32 ∷ Proxy RelaEnt32
+aRelaEnt32 = Proxy
 
--- | Serialize ELF32 relocation table entry (RELA) via 'ByteString'
---   builder.
-buildRelaEnt32 ∷ Endian → RelaEnt32 → BB.Builder
-buildRelaEnt32 endian (RelaEnt {..})
-  =  word32 relaOff
-  <> word32 (shiftL (fromIntegral relaSymIx) 8 .|.
-             fromIntegral (unRelType relaType))
-  <> word32 relaAddend
-  where word32 = if isLittleEndian endian then BB.word32LE else BB.word32BE
+instance Serializable RelaEnt32 where
+  put (RelaEnt {..})
+    =  S.word32 relaOff
+    <> S.word32 (shiftL (fromIntegral relaSymIx) 8 .|.
+                 fromIntegral (unRelType relaType))
+    <> S.word32 relaAddend
 
--- | Serialize ELF64 relocation table entry (RELA) via 'ByteString'
---   builder.
-buildRelaEnt64 ∷ Endian → RelaEnt64 → BB.Builder
-buildRelaEnt64 endian (RelaEnt {..})
-  =  word64 relaOff
-  <> word64 (shiftL (fromIntegral relaSymIx) 32 .|.
-             fromIntegral (unRelType relaType))
-  <> word64 relaAddend
-  where word64 = if isLittleEndian endian then BB.word64LE else BB.word64BE
+instance SizedSerializable RelaEnt32 where
+  size _ = 12
+  {-# INLINE size #-}
+
+instance Deserializable RelaEnt32 where
+  get = do
+    off    ← D.word32 <?> "offset"
+    info   ← D.word32 <?> "info"
+    let symIx = SymIx $ fromIntegral $ shiftR info 8
+        tp    = RelType $ fromIntegral info
+    addend ← D.word32 <?> "addend"
+    return $ RelaEnt { relaOff    = off
+                     , relaSymIx  = symIx
+                     , relaType   = tp
+                     , relaAddend = addend }
+
+-- | ELF64 relocation table entry (RELA).
+type RelaEnt64 = RelaEnt Elf64
+
+-- | 'RelaEnt64' proxy value.
+aRelaEnt64 ∷ Proxy RelaEnt64
+aRelaEnt64 = Proxy
+
+instance Serializable RelaEnt64 where
+  put (RelaEnt {..})
+    =  S.word64 relaOff
+    <> S.word64 (shiftL (fromIntegral relaSymIx) 32 .|.
+                 fromIntegral (unRelType relaType))
+    <> S.word64 relaAddend
+
+instance SizedSerializable RelaEnt64 where
+  size _ = 24
+  {-# INLINE size #-}
+
+instance Deserializable RelaEnt64 where
+  get = do
+    off    ← D.word64 <?> "offset"
+    info   ← D.word64 <?> "info"
+    let symIx = SymIx $ fromIntegral $ shiftR info 32
+        tp    = RelType $ fromIntegral info
+    addend ← D.word64 <?> "addend"
+    return $ RelaEnt { relaOff    = off
+                     , relaSymIx  = symIx
+                     , relaType   = tp
+                     , relaAddend = addend }

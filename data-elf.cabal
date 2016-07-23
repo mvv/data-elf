@@ -28,12 +28,9 @@ Source-Repository head
 Library
   Default-Language: Haskell2010
   Build-Depends: base >= 4.7 && < 5
-               , bytestring >= 0.10.2
-               , binary >= 0.7
-               , data-endian >= 0.1
                , data-sword >= 0.1.1
                , data-flags >= 0.0.3
-               , text-latin1 >= 0.3
+               , data-serializer >= 0.2
   Hs-Source-Dirs: src
   GHC-Options: -Wall
   Exposed-Modules:
