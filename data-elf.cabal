@@ -18,7 +18,7 @@ License-File: LICENSE
 Extra-Source-Files:
   README.md
 
-Tested-With: GHC==7.6.3, GHC==7.8.4, GHC==7.10.3, GHC==8.0.1
+Tested-With: GHC==7.10.3, GHC==8.0.1
 
 Cabal-Version: >= 1.10.0
 Build-Type: Simple
@@ -32,7 +32,7 @@ Library
   Build-Depends: base >= 4.7 && < 5
                , data-sword >= 0.1.1
                , data-flags >= 0.0.3
-               , data-serializer >= 0.2
+               , data-serializer >= 0.3
   Hs-Source-Dirs: src
   GHC-Options: -Wall
   Exposed-Modules:
